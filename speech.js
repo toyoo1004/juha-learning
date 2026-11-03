@@ -1,0 +1,16 @@
+export class Narrator {
+ constructor(settings){this.settings=settings;this.token=0;this.frame=0;this.timers=[];this.audio=null;}
+ cancel(){this.token++;window.speechSynthesis?.cancel();cancelAnimationFrame(this.frame);this.timers.forEach(clearTimeout);this.timers=[];if(this.audio){this.audio.pause();this.audio=null;}}
+ async say(text,{rate=.7,key,onProgress=()=>{},onEnd=()=>{},karaoke=false}={}){
+ this.cancel();const token=this.token;const alive=()=>token===this.token;let finished=false;
+ const end=()=>{if(!alive()||finished)return;finished=true;cancelAnimationFrame(this.frame);onProgress(text.length,1);onEnd();};
+ // Optional human recordings use [{start,end,charIndex,charEnd?}] in seconds.
+ if(key){try{const r=await fetch(`audio/${key}.json`);if(r.ok){const marks=await r.json();if(!Array.isArray(marks)||!marks.length||marks.some(m=>!Number.isFinite(m.start)||!Number.isFinite(m.end)||!Number.isInteger(m.charIndex)))throw Error('Invalid timing JSON');if(!alive())return;const audio=new Audio(`audio/${key}.mp3`);this.audio=audio;audio.playbackRate=rate;audio.onended=end;await audio.play();if(!alive()){audio.pause();return;}const tick=()=>{if(!alive())return;const t=audio.currentTime-this.settings().offset/1000;let m=marks.find(x=>t>=x.start&&t<x.end);if(m)onProgress(m.charIndex,Math.min(1,(t-m.start)/(m.end-m.start)));else {const prev=marks.filter(x=>x.end<=t).at(-1);if(prev)onProgress(prev.charEnd??prev.charIndex+1,0);}this.frame=requestAnimationFrame(tick);};tick();return;}}catch{if(this.audio){this.audio.pause();this.audio=null;}/* Use browser TTS when recordings are absent. */}}
+ if(!alive())return;
+ if(!('speechSynthesis' in window)){onProgress(text.length,1);onEnd('이 브라우저에서는 음성을 지원하지 않아요.');return;}
+ const utterance=new SpeechSynthesisUtterance(text);utterance.lang='ko-KR';utterance.rate=rate;utterance.voice=speechSynthesis.getVoices().find(v=>v.lang.startsWith('ko'))||null;
+ let start=0,lastBoundary=0,boundaryIndex=0;const duration=this.settings().charMs/rate;const timeline=[];let cursor=0;for(let i=0;i<text.length;i++){const ch=text[i];const d=/\s/.test(ch)?duration*.25:/[.,!?。]/.test(ch)?duration*.7:duration;timeline.push({start:cursor,end:cursor+d});cursor+=d;}
+ const tick=()=>{if(!alive()||finished)return;const elapsed=performance.now()-start-this.settings().offset; if(karaoke){if(lastBoundary){const fraction=Math.min(.95,Math.max(0,(performance.now()-lastBoundary-this.settings().offset)/duration));onProgress(boundaryIndex,fraction);}else if(elapsed>=600){let i=timeline.findIndex(x=>elapsed<x.end);if(i<0)i=text.length-1;const x=timeline[i];onProgress(i,Math.min(1,Math.max(0,(elapsed-x.start)/(x.end-x.start))));}}this.frame=requestAnimationFrame(tick);};
+ utterance.onstart=()=>{if(!alive())return;start=performance.now();tick();};utterance.onboundary=e=>{if(!alive()||!karaoke)return;boundaryIndex=e.charIndex;lastBoundary=performance.now();const t=setTimeout(()=>{if(alive())onProgress(e.charIndex,0);},Math.max(0,this.settings().offset));this.timers.push(t);};utterance.onend=end;utterance.onerror=e=>{if(alive()&&e.error!=='canceled'&&e.error!=='interrupted'){cancelAnimationFrame(this.frame);onEnd('음성을 재생하지 못했어요. 다시 듣기를 눌러 주세요.');}};speechSynthesis.speak(utterance);
+ }
+}

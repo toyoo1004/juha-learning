@@ -1,0 +1,6 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {words,playgroundWords,compose,decompose,choicesFor,shuffle} from './data.js';
+test('all 11,172 Hangul syllables round trip',()=>{for(let n=0xac00;n<=0xd7a3;n++){let s=String.fromCharCode(n);assert.equal(compose(...decompose(s)),s);}assert.equal(compose('ㄱ','ㅏ','ㄴ'),'간');assert.equal(compose('x','ㅏ'),'');});
+test('missions satisfy level requirements and complete metadata',()=>{for(const level of ['basic','advanced']){const pool=playgroundWords.filter(w=>w.level===level);assert.ok(pool.length>=30);for(const w of pool){assert.ok(w.id&&w.emoji&&w.category&&w.sentence&&w.audioKey&&w.sentenceAudioKey);if(level==='basic'){assert.equal(w.word.length,2);assert.ok([...w.word].every(c=>decompose(c)[2]===''));}for(let i=0;i<30;i++){const options=choicesFor(w,pool,level==='basic'?3:4);assert.equal(options.length,level==='basic'?3:4);assert.equal(new Set(options.map(x=>x.id)).size,options.length);assert.ok(options.some(x=>x.id!==w.id&&x.word[0]===w.word[0]));}}}assert.ok(words.filter(w=>w.level==='advanced').length>=30);});
+test('shuffle preserves input and membership',()=>{const x=[1,2,3,4];assert.deepEqual(shuffle(x,()=>0).sort(),x);assert.deepEqual(x,[1,2,3,4]);});
